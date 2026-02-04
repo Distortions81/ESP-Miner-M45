@@ -12,8 +12,8 @@
 #include "asic.h"
 
 static const char *TAG = "asic_result";
-static const size_t JOBID_MAX_LEN = 128;
-static const size_t EXTRANONCE2_MAX_LEN = 2 * 32 + 1; // MAX_EXTRANONCE_2_LEN * 2 + NUL
+#define JOBID_MAX_LEN 128
+#define EXTRANONCE2_MAX_LEN (2 * 32 + 1) // MAX_EXTRANONCE_2_LEN * 2 + NUL
 
 void ASIC_result_task(void *pvParameters)
 {
@@ -43,14 +43,17 @@ void ASIC_result_task(void *pvParameters)
         uint8_t job_id = asic_result->job_id;
 
         bm_job job_snapshot = {0};
-        char jobid_copy[JOBID_MAX_LEN] = {0};
-        char extranonce2_copy[EXTRANONCE2_MAX_LEN] = {0};
+        char jobid_copy[JOBID_MAX_LEN];
+        char extranonce2_copy[EXTRANONCE2_MAX_LEN];
         uint32_t pool_diff = 0;
         uint32_t job_version = 0;
         uint32_t job_ntime = 0;
         bool should_submit = false;
         bool have_jobid = false;
         bool have_extranonce2 = false;
+
+        memset(jobid_copy, 0, sizeof(jobid_copy));
+        memset(extranonce2_copy, 0, sizeof(extranonce2_copy));
 
         pthread_mutex_lock(&GLOBAL_STATE->valid_jobs_lock);
         if (GLOBAL_STATE->valid_jobs[job_id] == 0 || GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[job_id] == NULL)

@@ -192,6 +192,13 @@ menu "Stratum Configuration"
         help
             A starting difficulty to use with the pool.
 
+    config SKIP_LOCAL_NONCE_CHECK
+        bool "Skip local nonce validation (performance)"
+        default y
+        help
+            Skip local double-SHA256 nonce validation and assume ASIC results meet pool difficulty.
+            This can improve performance but may increase invalid shares and distort local stats.
+
     config FALLBACK_STRATUM_DIFFICULTY
         int "Fallback stratum default difficulty"
         range 0 4294967296

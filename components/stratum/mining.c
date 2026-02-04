@@ -4,6 +4,7 @@
 #include "mining.h"
 #include "utils.h"
 #include "mbedtls/sha256.h"
+#include "sdkconfig.h"
 #include "esp_log.h"
 
 void free_bm_job(bm_job *job)
@@ -155,6 +156,11 @@ static const double truediffone = 2695953529101130949315647634472399133601089873
 /* testing a nonce and return the diff - 0 means invalid */
 double test_nonce_value(const bm_job *job, const uint32_t nonce, const uint32_t rolled_version)
 {
+#ifdef CONFIG_SKIP_LOCAL_NONCE_CHECK
+    (void)nonce;
+    (void)rolled_version;
+    return (double)job->pool_diff;
+#endif
     uint8_t header[80];
 
     // // TODO: use the midstate hash instead of hashing the whole header
