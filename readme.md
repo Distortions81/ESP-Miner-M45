@@ -6,7 +6,7 @@
 ![Alt](https://repobeats.axiom.co/api/embed/70889479b1e002c18a184b05bc5cbf2ed3718579.svg "Repobeats analytics image")
 
 ## Current changes (all commits)
-- Add `SKIP_LOCAL_NONCE_CHECK` build flag (default off) to bypass local double-SHA256 nonce validation and assume ASIC results meet pool difficulty.
+- Add `SKIP_LOCAL_NONCE_CHECK` build flag (default off) to bypass local double-SHA256 nonce validation (testing).
 - Stratum fast-path parsing and canned JSON TX; host benchmark shows ~1.76x faster parsing and ~3.89x faster marshaling vs cJSON (example run: 0.17 us/msg parse, 0.11 us/msg marshal).
 - Reduce hot-path overhead: pre-decode coinbase parts, avoid heap allocs when preparing share submits, and demote ASIC result logs to debug.
 - Force chart Y-axis minimum to `0` in AxeOS charts.
