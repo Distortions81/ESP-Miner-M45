@@ -5,6 +5,19 @@
 ![GitHub contributors](https://img.shields.io/github/contributors/bitaxeorg/esp-miner)
 ![Alt](https://repobeats.axiom.co/api/embed/70889479b1e002c18a184b05bc5cbf2ed3718579.svg "Repobeats analytics image")
 
+## Current changes (all commits)
+- Add `SKIP_LOCAL_NONCE_CHECK` build flag (default on) to bypass local double-SHA256 nonce validation and assume ASIC results meet pool difficulty.
+- Reduce hot-path overhead: pre-decode coinbase parts, avoid heap allocs when preparing share submits, and demote ASIC result logs to debug.
+- Force chart Y-axis minimum to `0` in AxeOS charts.
+- Force fan to 100% before frequency transitions to avoid thermal spikes.
+- Ignore "Method not found" errors for `mining.suggest_difficulty` / `mining.extranonce.subscribe` setup calls.
+- Skip midstate generation for non-BM1397 ASICs (only BM1397 uses midstate).
+- Use max of `temp`/`temp2` for ASIC temperature charts and scaling.
+- BM1397 duplicate-nonce filtering is now per job, and job reset clears all 128 valid job slots.
+- Clamp job-queue timeout to non-negative and guard job-target reads with `valid_jobs_lock`.
+- Guard `active_jobs` access with `valid_jobs_lock` and snapshot job data before use.
+- Initial import of ESP-Miner firmware, AxeOS UI, configs, CI, and tooling.
+
 # ESP-Miner
 esp-miner is open source ESP32 firmware for the [Bitaxe](https://github.com/bitaxeorg/bitaxe)
 
