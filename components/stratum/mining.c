@@ -61,6 +61,35 @@ void calculate_coinbase_tx_hash_prebin(const uint8_t *coinbase_1_bin, size_t coi
     double_sha256_bin(coinbase_tx_bin, coinbase_tx_bin_len, dest);
 }
 
+void calculate_coinbase_tx_hash_prebin_ex2_bin(const uint8_t *coinbase_1_bin, size_t coinbase_1_bin_len,
+                                               const uint8_t *coinbase_2_bin, size_t coinbase_2_bin_len,
+                                               const char *extranonce, const uint8_t *extranonce_2_bin,
+                                               size_t extranonce_2_bin_len, uint8_t dest[32])
+{
+    size_t len2 = strlen(extranonce);
+    size_t extranonce_bin_len = len2 / 2;
+    size_t coinbase_tx_bin_len = coinbase_1_bin_len + extranonce_bin_len + extranonce_2_bin_len + coinbase_2_bin_len;
+
+    uint8_t coinbase_tx_bin[coinbase_tx_bin_len];
+
+    size_t bin_offset = 0;
+    if (coinbase_1_bin != NULL && coinbase_1_bin_len > 0) {
+        memcpy(coinbase_tx_bin + bin_offset, coinbase_1_bin, coinbase_1_bin_len);
+        bin_offset += coinbase_1_bin_len;
+    }
+    bin_offset += hex2bin(extranonce, coinbase_tx_bin + bin_offset, coinbase_tx_bin_len - bin_offset);
+    if (extranonce_2_bin != NULL && extranonce_2_bin_len > 0) {
+        memcpy(coinbase_tx_bin + bin_offset, extranonce_2_bin, extranonce_2_bin_len);
+        bin_offset += extranonce_2_bin_len;
+    }
+    if (coinbase_2_bin != NULL && coinbase_2_bin_len > 0) {
+        memcpy(coinbase_tx_bin + bin_offset, coinbase_2_bin, coinbase_2_bin_len);
+        bin_offset += coinbase_2_bin_len;
+    }
+
+    double_sha256_bin(coinbase_tx_bin, coinbase_tx_bin_len, dest);
+}
+
 void calculate_merkle_root_hash(const uint8_t coinbase_tx_hash[32], const uint8_t merkle_branches[][32], const int num_merkle_branches, uint8_t dest[32])
 {
     uint8_t both_merkles[64];
@@ -137,15 +166,22 @@ void extranonce_2_generate(uint64_t extranonce_2, uint32_t length, char dest[sta
 {
     // Allocate buffer to hold the extranonce_2 value in bytes
     uint8_t extranonce_2_bytes[length];
-    memset(extranonce_2_bytes, 0, length);
-    
+    extranonce_2_generate_bytes_and_hex(extranonce_2, length, extranonce_2_bytes, dest);
+}
+
+void extranonce_2_generate_bytes_and_hex(uint64_t extranonce_2, uint32_t length,
+                                         uint8_t dest_bin[static length],
+                                         char dest_hex[static length * 2 + 1])
+{
+    memset(dest_bin, 0, length);
+
     // Copy the extranonce_2 value into the buffer, handling endianness
     // Copy up to the size of uint64_t or the requested length, whichever is smaller
     size_t copy_len = (length < sizeof(uint64_t)) ? length : sizeof(uint64_t);
-    memcpy(extranonce_2_bytes, &extranonce_2, copy_len);
-    
+    memcpy(dest_bin, &extranonce_2, copy_len);
+
     // Convert the bytes to hex string
-    bin2hex(extranonce_2_bytes, length, dest, length * 2 + 1);
+    bin2hex(dest_bin, length, dest_hex, length * 2 + 1);
 }
 
 ///////cgminer nonce testing

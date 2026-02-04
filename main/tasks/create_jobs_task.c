@@ -89,16 +89,18 @@ void create_jobs_task(void *pvParameters)
 static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification, uint64_t extranonce_2, uint32_t difficulty)
 {
     char extranonce_2_str[GLOBAL_STATE->extranonce_2_len * 2 + 1];
-    extranonce_2_generate(extranonce_2, GLOBAL_STATE->extranonce_2_len, extranonce_2_str);
+    uint8_t extranonce_2_bin[GLOBAL_STATE->extranonce_2_len];
+    extranonce_2_generate_bytes_and_hex(extranonce_2, GLOBAL_STATE->extranonce_2_len, extranonce_2_bin, extranonce_2_str);
 
     //print generated extranonce_2
     //ESP_LOGI(TAG, "Generated extranonce_2: %s", extranonce_2_str);
 
     uint8_t coinbase_tx_hash[32];
     if (notification->coinbase_1_bin != NULL && notification->coinbase_2_bin != NULL) {
-        calculate_coinbase_tx_hash_prebin(notification->coinbase_1_bin, notification->coinbase_1_bin_len,
-                                          notification->coinbase_2_bin, notification->coinbase_2_bin_len,
-                                          GLOBAL_STATE->extranonce_str, extranonce_2_str, coinbase_tx_hash);
+        calculate_coinbase_tx_hash_prebin_ex2_bin(notification->coinbase_1_bin, notification->coinbase_1_bin_len,
+                                                  notification->coinbase_2_bin, notification->coinbase_2_bin_len,
+                                                  GLOBAL_STATE->extranonce_str, extranonce_2_bin,
+                                                  GLOBAL_STATE->extranonce_2_len, coinbase_tx_hash);
     } else {
         calculate_coinbase_tx_hash(notification->coinbase_1, notification->coinbase_2,
                                    GLOBAL_STATE->extranonce_str, extranonce_2_str, coinbase_tx_hash);
