@@ -76,7 +76,8 @@ typedef struct __attribute__((__packed__))
 
 static const char * TAG = "bm1397";
 
-static uint32_t prev_nonce = 0;
+static uint32_t last_nonce_by_job[128] = {0};
+static uint8_t last_nonce_valid[128] = {0};
 static task_result result;
 
 static int address_interval;
@@ -284,6 +285,7 @@ void BM1397_send_work(void *pvParameters, bm_job *next_bm_job)
 
     GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[job.job_id] = next_bm_job;
     GLOBAL_STATE->valid_jobs[job.job_id] = 1;
+    last_nonce_valid[job.job_id] = 0;
     pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
 
     #if BM1397_DEBUG_JOBS
@@ -315,9 +317,6 @@ task_result *BM1397_process_work(void *pvParameters)
         return &result;
     }
 
-    uint8_t nonce_found = 0;
-    uint32_t first_nonce = 0;
-
     uint8_t rx_job_id = asic_result.job.id & 0xfc;
     uint8_t rx_midstate_index = asic_result.job.id & 0x03;
 
@@ -332,35 +331,20 @@ task_result *BM1397_process_work(void *pvParameters)
         return NULL;
     }
 
+    if (last_nonce_valid[rx_job_id] && asic_result.job.nonce == last_nonce_by_job[rx_job_id]) {
+        pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
+        return NULL;
+    }
+
+    last_nonce_by_job[rx_job_id] = asic_result.job.nonce;
+    last_nonce_valid[rx_job_id] = 1;
+
     rolled_version = GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[rx_job_id]->version;
     version_mask = GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[rx_job_id]->version_mask;
     pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
     for (int i = 0; i < rx_midstate_index; i++)
     {
         rolled_version = increment_bitmask(rolled_version, version_mask);
-    }
-
-    // ASIC may return the same nonce multiple times
-    // or one that was already found
-    // most of the time it behaves however
-    if (nonce_found == 0)
-    {
-        first_nonce = asic_result.job.nonce;
-        nonce_found = 1;
-    }
-    else if (asic_result.job.nonce == first_nonce)
-    {
-        // stop if we've already seen this nonce
-        return NULL;
-    }
-
-    if (asic_result.job.nonce == prev_nonce)
-    {
-        return NULL;
-    }
-    else
-    {
-        prev_nonce = asic_result.job.nonce;
     }
 
     uint32_t nonce_h = ntohl(asic_result.job.nonce);

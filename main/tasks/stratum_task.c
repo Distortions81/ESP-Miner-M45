@@ -237,7 +237,7 @@ void cleanQueue(GlobalState * GLOBAL_STATE) {
     queue_clear(&GLOBAL_STATE->stratum_queue);
 
     pthread_mutex_lock(&GLOBAL_STATE->valid_jobs_lock);
-    for (int i = 0; i < 128; i = i + 4) {
+    for (int i = 0; i < 128; i++) {
         GLOBAL_STATE->valid_jobs[i] = 0;
     }
     pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
