@@ -335,14 +335,38 @@ static const char *json_expect_char(const char *p, char c)
 
 static const char *json_parse_hex_u32_from_string(const char *p, uint32_t *out)
 {
-    char *hex = NULL;
-    const char *next = json_parse_string_dup(p, &hex);
-    if (!next) {
+    p = json_skip_ws(p);
+    if (*p != '"') {
         return NULL;
     }
-    *out = (uint32_t)strtoul(hex, NULL, 16);
-    free(hex);
-    return next;
+    p++; // skip opening quote
+
+    uint32_t value = 0;
+    bool has_digit = false;
+
+    while (*p && *p != '"') {
+        unsigned char c = (unsigned char)*p;
+        uint8_t v;
+        if (c >= '0' && c <= '9') {
+            v = (uint8_t)(c - '0');
+        } else if (c >= 'a' && c <= 'f') {
+            v = (uint8_t)(c - 'a' + 10);
+        } else if (c >= 'A' && c <= 'F') {
+            v = (uint8_t)(c - 'A' + 10);
+        } else {
+            return NULL;
+        }
+        value = (value << 4) | v;
+        has_digit = true;
+        p++;
+    }
+
+    if (*p != '"' || !has_digit) {
+        return NULL;
+    }
+
+    *out = value;
+    return p + 1;
 }
 
 static const char *json_count_string_array(const char *p, size_t *count)
