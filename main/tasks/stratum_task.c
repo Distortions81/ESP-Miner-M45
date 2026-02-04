@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <stdbool.h>
 #include <string.h>
+#include <strings.h>
 #include "utils.h"
 #include "coinbase_decoder.h"
 #include <esp_heap_caps.h>
@@ -530,6 +531,8 @@ void stratum_task(void * pvParameters)
         char * password = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback ? GLOBAL_STATE->SYSTEM_MODULE.fallback_pool_pass : GLOBAL_STATE->SYSTEM_MODULE.pool_pass;
 
         int authorize_message_id = GLOBAL_STATE->send_uid++;
+        int suggest_difficulty_message_id = -1;
+        int extranonce_subscribe_message_id = -1;
 
         //mining.authorize - ID: 3
         STRATUM_V1_authorize(GLOBAL_STATE->transport, authorize_message_id, username, password);
@@ -599,8 +602,19 @@ void stratum_task(void * pvParameters)
                     ESP_LOGI(TAG, "message result accepted");
                     SYSTEM_notify_accepted_share(GLOBAL_STATE);
                 } else {
-                    ESP_LOGW(TAG, "message result rejected: %s", stratum_api_v1_message.error_str);
-                    SYSTEM_notify_rejected_share(GLOBAL_STATE, stratum_api_v1_message.error_str);
+                    bool is_setup_method_not_found =
+                        stratum_api_v1_message.error_str != NULL &&
+                        strcasecmp(stratum_api_v1_message.error_str, "Method not found") == 0 &&
+                        (stratum_api_v1_message.message_id == suggest_difficulty_message_id ||
+                         stratum_api_v1_message.message_id == extranonce_subscribe_message_id);
+
+                    if (is_setup_method_not_found) {
+                        ESP_LOGI(TAG, "setup method not supported by pool (id=%d): %s",
+                                 stratum_api_v1_message.message_id, stratum_api_v1_message.error_str);
+                    } else {
+                        ESP_LOGW(TAG, "message result rejected: %s", stratum_api_v1_message.error_str);
+                        SYSTEM_notify_rejected_share(GLOBAL_STATE, stratum_api_v1_message.error_str);
+                    }
                 }
             } else if (stratum_api_v1_message.method == STRATUM_RESULT_SETUP) {
                 // Reset retry attempts after successfully receiving data.
@@ -608,10 +622,12 @@ void stratum_task(void * pvParameters)
                 if (stratum_api_v1_message.response_success) {
                     ESP_LOGI(TAG, "setup message accepted");
                     if (stratum_api_v1_message.message_id == authorize_message_id && difficulty > 0) {
-                        STRATUM_V1_suggest_difficulty(GLOBAL_STATE->transport, GLOBAL_STATE->send_uid++, difficulty);
+                        suggest_difficulty_message_id = GLOBAL_STATE->send_uid++;
+                        STRATUM_V1_suggest_difficulty(GLOBAL_STATE->transport, suggest_difficulty_message_id, difficulty);
                     }
                     if (extranonce_subscribe) {
-                        STRATUM_V1_extranonce_subscribe(GLOBAL_STATE->transport, GLOBAL_STATE->send_uid++);
+                        extranonce_subscribe_message_id = GLOBAL_STATE->send_uid++;
+                        STRATUM_V1_extranonce_subscribe(GLOBAL_STATE->transport, extranonce_subscribe_message_id);
                     }
                 } else {
                     ESP_LOGE(TAG, "setup message rejected: %s", stratum_api_v1_message.error_str);
