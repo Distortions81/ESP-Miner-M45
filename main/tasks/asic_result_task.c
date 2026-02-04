@@ -79,8 +79,9 @@ void ASIC_result_task(void *pvParameters)
             should_submit = true;
         }
 
-        SYSTEM_notify_found_nonce(GLOBAL_STATE, nonce_diff, job_id);
         pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
+
+        SYSTEM_notify_found_nonce(GLOBAL_STATE, nonce_diff, job_id);
 
         if (should_submit && jobid_copy != NULL && extranonce2_copy != NULL)
         {
