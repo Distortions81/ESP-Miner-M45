@@ -19,6 +19,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 #define TRANSPORT_TIMEOUT_MS 5000
 #define BUFFER_SIZE 1024
@@ -77,6 +78,626 @@ double STRATUM_V1_get_response_time_ms(int request_id)
 
 static void debug_stratum_tx(const char *);
 int _parse_stratum_subscribe_result_message(const char * result_json_str, char ** extranonce, int * extranonce2_len);
+
+static int stratum_sendf(esp_transport_handle_t transport, const char *fmt, ...)
+{
+    char msg[BUFFER_SIZE];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+    debug_stratum_tx(msg);
+    return esp_transport_write(transport, msg, strlen(msg), TRANSPORT_TIMEOUT_MS);
+}
+
+static const char *json_skip_ws(const char *p)
+{
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) {
+        p++;
+    }
+    return p;
+}
+
+static const char *json_skip_string(const char *p)
+{
+    if (*p != '"') {
+        return NULL;
+    }
+    p++;
+    bool escape = false;
+    while (*p) {
+        if (escape) {
+            escape = false;
+            p++;
+            continue;
+        }
+        if (*p == '\\') {
+            escape = true;
+            p++;
+            continue;
+        }
+        if (*p == '"') {
+            return p + 1;
+        }
+        p++;
+    }
+    return NULL;
+}
+
+static const char *json_parse_string_dup(const char *p, char **out)
+{
+    p = json_skip_ws(p);
+    if (*p != '"') {
+        return NULL;
+    }
+    const char *start = p + 1;
+    const char *end = json_skip_string(p);
+    if (end == NULL) {
+        return NULL;
+    }
+    size_t len = 0;
+    bool escape = false;
+    for (const char *r = start; r < end - 1; r++) {
+        if (escape) {
+            escape = false;
+            len++;
+            continue;
+        }
+        if (*r == '\\') {
+            escape = true;
+            continue;
+        }
+        len++;
+    }
+    char *buf = malloc(len + 1);
+    if (!buf) {
+        return NULL;
+    }
+    char *w = buf;
+    escape = false;
+    for (const char *r = start; r < end - 1; r++) {
+        if (escape) {
+            *w++ = *r;
+            escape = false;
+            continue;
+        }
+        if (*r == '\\') {
+            escape = true;
+            continue;
+        }
+        *w++ = *r;
+    }
+    *w = '\0';
+    *out = buf;
+    return end;
+}
+
+static const char *json_parse_int(const char *p, int *out)
+{
+    p = json_skip_ws(p);
+    char *end = NULL;
+    long value = strtol(p, &end, 10);
+    if (end == p) {
+        return NULL;
+    }
+    *out = (int)value;
+    return end;
+}
+
+static const char *json_parse_uint32(const char *p, uint32_t *out)
+{
+    p = json_skip_ws(p);
+    char *end = NULL;
+    unsigned long value = strtoul(p, &end, 10);
+    if (end == p) {
+        return NULL;
+    }
+    *out = (uint32_t)value;
+    return end;
+}
+
+static const char *json_parse_bool(const char *p, bool *out)
+{
+    p = json_skip_ws(p);
+    if (strncmp(p, "true", 4) == 0) {
+        *out = true;
+        return p + 4;
+    }
+    if (strncmp(p, "false", 5) == 0) {
+        *out = false;
+        return p + 5;
+    }
+    return NULL;
+}
+
+static const char *json_find_key(const char *json, const char *key)
+{
+    size_t key_len = strlen(key);
+    bool in_string = false;
+    bool escape = false;
+    for (const char *p = json; *p; p++) {
+        if (in_string) {
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (*p == '\\') {
+                escape = true;
+                continue;
+            }
+            if (*p == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (*p == '"') {
+            if (strncmp(p + 1, key, key_len) == 0 && p[1 + key_len] == '"') {
+                const char *q = p + 1 + key_len + 1;
+                q = json_skip_ws(q);
+                if (*q != ':') {
+                    continue;
+                }
+                q++;
+                return json_skip_ws(q);
+            }
+            in_string = true;
+        }
+    }
+    return NULL;
+}
+
+static const char *json_skip_value(const char *p)
+{
+    p = json_skip_ws(p);
+    if (*p == '"') {
+        return json_skip_string(p);
+    }
+    if (*p == '{' || *p == '[') {
+        char open = *p;
+        char close = (open == '{') ? '}' : ']';
+        int depth = 0;
+        bool in_string = false;
+        bool escape = false;
+        for (; *p; p++) {
+            if (in_string) {
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                if (*p == '\\') {
+                    escape = true;
+                    continue;
+                }
+                if (*p == '"') {
+                    in_string = false;
+                }
+                continue;
+            }
+            if (*p == '"') {
+                in_string = true;
+                continue;
+            }
+            if (*p == open) {
+                depth++;
+            } else if (*p == close) {
+                depth--;
+                if (depth == 0) {
+                    return p + 1;
+                }
+            }
+        }
+        return NULL;
+    }
+    if (strncmp(p, "true", 4) == 0) return p + 4;
+    if (strncmp(p, "false", 5) == 0) return p + 5;
+    if (strncmp(p, "null", 4) == 0) return p + 4;
+    if ((*p >= '0' && *p <= '9') || *p == '-') {
+        while (*p && (strchr("0123456789+-.eE", *p) != NULL)) {
+            p++;
+        }
+        return p;
+    }
+    return NULL;
+}
+
+static const char *json_expect_char(const char *p, char c)
+{
+    p = json_skip_ws(p);
+    if (*p != c) {
+        return NULL;
+    }
+    return p + 1;
+}
+
+static const char *json_parse_hex_u32_from_string(const char *p, uint32_t *out)
+{
+    char *hex = NULL;
+    const char *next = json_parse_string_dup(p, &hex);
+    if (!next) {
+        return NULL;
+    }
+    *out = (uint32_t)strtoul(hex, NULL, 16);
+    free(hex);
+    return next;
+}
+
+static const char *json_count_string_array(const char *p, size_t *count)
+{
+    p = json_expect_char(p, '[');
+    if (!p) return NULL;
+    size_t total = 0;
+    for (;;) {
+        p = json_skip_ws(p);
+        if (*p == ']') {
+            p++;
+            break;
+        }
+        const char *next = json_skip_string(p);
+        if (!next) {
+            return NULL;
+        }
+        total++;
+        p = json_skip_ws(next);
+        if (*p == ',') {
+            p++;
+            continue;
+        }
+        if (*p == ']') {
+            p++;
+            break;
+        }
+        return NULL;
+    }
+    *count = total;
+    return p;
+}
+
+static const char *json_parse_merkle_array(const char *p, mining_notify *new_work)
+{
+    size_t count = 0;
+    const char *after = json_count_string_array(p, &count);
+    if (!after) {
+        return NULL;
+    }
+    if (count > MAX_MERKLE_BRANCHES) {
+        ESP_LOGE(TAG, "Too many Merkle branches.");
+        return NULL;
+    }
+    new_work->n_merkle_branches = count;
+    new_work->merkle_branches = malloc(HASH_SIZE * count);
+    if (!new_work->merkle_branches && count > 0) {
+        return NULL;
+    }
+    p = json_expect_char(p, '[');
+    if (!p) return NULL;
+    size_t idx = 0;
+    for (;;) {
+        p = json_skip_ws(p);
+        if (*p == ']') {
+            p++;
+            break;
+        }
+        char *branch = NULL;
+        const char *next = json_parse_string_dup(p, &branch);
+        if (!next) {
+            return NULL;
+        }
+        if (idx < count) {
+            hex2bin(branch, new_work->merkle_branches + HASH_SIZE * idx, HASH_SIZE);
+        }
+        free(branch);
+        idx++;
+        p = json_skip_ws(next);
+        if (*p == ',') {
+            p++;
+            continue;
+        }
+        if (*p == ']') {
+            p++;
+            break;
+        }
+        return NULL;
+    }
+    return p;
+}
+
+static bool parse_notify_params_fast(const char *p, mining_notify *new_work)
+{
+    p = json_expect_char(p, '[');
+    if (!p) return false;
+    p = json_parse_string_dup(p, &new_work->job_id);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_string_dup(p, &new_work->prev_block_hash);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_string_dup(p, &new_work->coinbase_1);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_string_dup(p, &new_work->coinbase_2);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_merkle_array(p, new_work);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_hex_u32_from_string(p, &new_work->version);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_hex_u32_from_string(p, &new_work->target);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    p = json_parse_hex_u32_from_string(p, &new_work->ntime);
+    if (!p) return false;
+    p = json_expect_char(p, ',');
+    if (!p) return false;
+    bool clean_jobs = false;
+    p = json_parse_bool(p, &clean_jobs);
+    if (!p) return false;
+    new_work->clean_jobs = clean_jobs;
+    return true;
+}
+
+static bool parse_result_fast(StratumApiV1Message *message, const char *stratum_json, int parsed_id)
+{
+    const char *result = json_find_key(stratum_json, "result");
+    if (!result) {
+        return false;
+    }
+
+    if (parsed_id == STRATUM_ID_SUBSCRIBE && *result == '[') {
+        const char *p = result;
+        p = json_expect_char(p, '[');
+        if (!p) return false;
+        p = json_skip_value(p);
+        if (!p) return false;
+        p = json_expect_char(p, ',');
+        if (!p) return false;
+        char *extranonce = NULL;
+        p = json_parse_string_dup(p, &extranonce);
+        if (!p) return false;
+        p = json_expect_char(p, ',');
+        if (!p) {
+            free(extranonce);
+            return false;
+        }
+        int extranonce_len = 0;
+        p = json_parse_int(p, &extranonce_len);
+        if (!p) {
+            free(extranonce);
+            return false;
+        }
+        if (extranonce_len > MAX_EXTRANONCE_2_LEN) {
+            ESP_LOGW(TAG, "Extranonce_2_len %d exceeds maximum %d, clamping to maximum",
+                     extranonce_len, MAX_EXTRANONCE_2_LEN);
+            extranonce_len = MAX_EXTRANONCE_2_LEN;
+        }
+        message->extranonce_str = extranonce;
+        message->extranonce_2_len = extranonce_len;
+        message->response_success = true;
+        message->method = STRATUM_RESULT_SUBSCRIBE;
+        return true;
+    }
+
+    if (*result == '{' && parsed_id == STRATUM_ID_CONFIGURE) {
+        const char *mask = json_find_key(stratum_json, "version-rolling.mask");
+        if (mask && *mask == '"') {
+            uint32_t version_mask = 0;
+            if (json_parse_hex_u32_from_string(mask, &version_mask)) {
+                message->version_mask = version_mask;
+                message->method = STRATUM_RESULT_VERSION_MASK;
+                return true;
+            }
+        }
+    }
+
+    bool ok = false;
+    const char *after_bool = json_parse_bool(result, &ok);
+    if (after_bool) {
+        message->response_success = ok;
+        message->method = (parsed_id < 5) ? STRATUM_RESULT_SETUP : STRATUM_RESULT;
+        if (!ok) {
+            const char *reject = json_find_key(stratum_json, "reject-reason");
+            if (reject && *reject == '"') {
+                char *reason = NULL;
+                if (json_parse_string_dup(reject, &reason)) {
+                    message->error_str = reason;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (strncmp(result, "null", 4) == 0) {
+        message->response_success = false;
+        message->error_str = strdup("unknown");
+        message->method = (parsed_id < 5) ? STRATUM_RESULT_SETUP : STRATUM_RESULT;
+        return true;
+    }
+
+    const char *error = json_find_key(stratum_json, "error");
+    if (error && strncmp(error, "null", 4) != 0) {
+        message->response_success = false;
+        message->method = (parsed_id < 5) ? STRATUM_RESULT_SETUP : STRATUM_RESULT;
+        char *error_msg = NULL;
+        if (*error == '[') {
+            const char *p = error;
+            p = json_expect_char(p, '[');
+            if (p) {
+                p = json_skip_value(p);
+                if (p) {
+                    p = json_expect_char(p, ',');
+                    if (p) {
+                        if (json_parse_string_dup(p, &error_msg)) {
+                            message->error_str = error_msg;
+                            return true;
+                        }
+                    }
+                }
+            }
+        } else if (*error == '"') {
+            if (json_parse_string_dup(error, &error_msg)) {
+                message->error_str = error_msg;
+                return true;
+            }
+        }
+        if (!message->error_str) {
+            message->error_str = strdup("unknown");
+        }
+        return true;
+    }
+
+    return false;
+}
+
+static bool STRATUM_V1_parse_fast(StratumApiV1Message *message, const char *stratum_json)
+{
+    const char *id_val = json_find_key(stratum_json, "id");
+    int parsed_id = -1;
+    if (id_val && strncmp(id_val, "null", 4) != 0) {
+        json_parse_int(id_val, &parsed_id);
+    }
+    last_parsed_request_id = parsed_id;
+    message->message_id = parsed_id;
+
+    const char *method_val = json_find_key(stratum_json, "method");
+    if (method_val && *method_val == '"') {
+        char *method = NULL;
+        if (!json_parse_string_dup(method_val, &method) || !method) {
+            free(method);
+            return false;
+        }
+        if (strcmp("mining.notify", method) == 0) {
+            message->method = MINING_NOTIFY;
+            mining_notify *new_work = calloc(1, sizeof(mining_notify));
+            if (!new_work) {
+                free(method);
+                return false;
+            }
+            const char *params = json_find_key(stratum_json, "params");
+            if (!params || !parse_notify_params_fast(params, new_work)) {
+                STRATUM_V1_free_mining_notify(new_work);
+                free(method);
+                return false;
+            }
+            new_work->coinbase_1_bin_len = strlen(new_work->coinbase_1) / 2;
+            new_work->coinbase_2_bin_len = strlen(new_work->coinbase_2) / 2;
+            new_work->coinbase_1_bin = malloc(new_work->coinbase_1_bin_len);
+            new_work->coinbase_2_bin = malloc(new_work->coinbase_2_bin_len);
+            if (new_work->coinbase_1_bin != NULL) {
+                hex2bin(new_work->coinbase_1, new_work->coinbase_1_bin, new_work->coinbase_1_bin_len);
+            }
+            if (new_work->coinbase_2_bin != NULL) {
+                hex2bin(new_work->coinbase_2, new_work->coinbase_2_bin, new_work->coinbase_2_bin_len);
+            }
+            message->mining_notification = new_work;
+            free(method);
+            return true;
+        }
+        if (strcmp("mining.set_difficulty", method) == 0) {
+            message->method = MINING_SET_DIFFICULTY;
+            const char *params = json_find_key(stratum_json, "params");
+            if (!params) {
+                free(method);
+                return false;
+            }
+            params = json_expect_char(params, '[');
+            if (!params) {
+                free(method);
+                return false;
+            }
+            uint32_t diff = 0;
+            if (!json_parse_uint32(params, &diff)) {
+                free(method);
+                return false;
+            }
+            message->new_difficulty = diff;
+            free(method);
+            return true;
+        }
+        if (strcmp("mining.set_version_mask", method) == 0) {
+            message->method = MINING_SET_VERSION_MASK;
+            const char *params = json_find_key(stratum_json, "params");
+            if (!params) {
+                free(method);
+                return false;
+            }
+            params = json_expect_char(params, '[');
+            if (!params) {
+                free(method);
+                return false;
+            }
+            uint32_t version_mask = 0;
+            if (!json_parse_hex_u32_from_string(params, &version_mask)) {
+                free(method);
+                return false;
+            }
+            message->version_mask = version_mask;
+            free(method);
+            return true;
+        }
+        if (strcmp("mining.set_extranonce", method) == 0) {
+            message->method = MINING_SET_EXTRANONCE;
+            const char *params = json_find_key(stratum_json, "params");
+            if (!params) {
+                free(method);
+                return false;
+            }
+            params = json_expect_char(params, '[');
+            if (!params) {
+                free(method);
+                return false;
+            }
+            char *extranonce = NULL;
+            params = json_parse_string_dup(params, &extranonce);
+            if (!params) {
+                free(method);
+                return false;
+            }
+            params = json_expect_char(params, ',');
+            if (!params) {
+                free(extranonce);
+                free(method);
+                return false;
+            }
+            int extranonce_len = 0;
+            if (!json_parse_int(params, &extranonce_len)) {
+                free(extranonce);
+                free(method);
+                return false;
+            }
+            if (extranonce_len > MAX_EXTRANONCE_2_LEN) {
+                ESP_LOGW(TAG, "Extranonce_2_len %d exceeds maximum %d, clamping to maximum",
+                         extranonce_len, MAX_EXTRANONCE_2_LEN);
+                extranonce_len = MAX_EXTRANONCE_2_LEN;
+            }
+            message->extranonce_str = extranonce;
+            message->extranonce_2_len = extranonce_len;
+            free(method);
+            return true;
+        }
+        if (strcmp("mining.ping", method) == 0) {
+            message->method = MINING_PING;
+            free(method);
+            return true;
+        }
+        if (strcmp("client.reconnect", method) == 0) {
+            message->method = CLIENT_RECONNECT;
+            free(method);
+            return true;
+        }
+        free(method);
+        return false;
+    }
+
+    return parse_result_fast(message, stratum_json, parsed_id);
+}
 
 esp_transport_handle_t STRATUM_V1_transport_init(tls_mode tls, char * cert)
 {
@@ -216,6 +837,9 @@ char * STRATUM_V1_receive_jsonrpc_line(esp_transport_handle_t transport)
 void STRATUM_V1_parse(StratumApiV1Message * message, const char * stratum_json)
 {
     ESP_LOGI(TAG, "rx: %s", stratum_json); // debug incoming stratum messages
+    if (STRATUM_V1_parse_fast(message, stratum_json)) {
+        return;
+    }
 
     cJSON * json = cJSON_Parse(stratum_json);
 
@@ -451,59 +1075,39 @@ int _parse_stratum_subscribe_result_message(const char * result_json_str, char *
 int STRATUM_V1_subscribe(esp_transport_handle_t transport, int send_uid, const char * model)
 {
     // Subscribe
-    char subscribe_msg[BUFFER_SIZE];
     const esp_app_desc_t *app_desc = esp_app_get_description();
     const char *version = app_desc->version;	
-    snprintf(subscribe_msg, sizeof(subscribe_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"mining.subscribe\",\"params\":[\"bitaxe/%s/%s\"]}\n",
         send_uid, model, version);
-    debug_stratum_tx(subscribe_msg);
-
-    return esp_transport_write(transport, subscribe_msg, strlen(subscribe_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 int STRATUM_V1_suggest_difficulty(esp_transport_handle_t transport, int send_uid, uint32_t difficulty)
 {
-    char difficulty_msg[BUFFER_SIZE];
-    snprintf(difficulty_msg, sizeof(difficulty_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"mining.suggest_difficulty\",\"params\":[%ld]}\n",
         send_uid, difficulty);
-    debug_stratum_tx(difficulty_msg);
-
-    return esp_transport_write(transport, difficulty_msg, strlen(difficulty_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 int STRATUM_V1_extranonce_subscribe(esp_transport_handle_t transport, int send_uid)
 {
-    char extranonce_msg[BUFFER_SIZE];
-    snprintf(extranonce_msg, sizeof(extranonce_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"mining.extranonce.subscribe\",\"params\":[]}\n",
         send_uid);
-    debug_stratum_tx(extranonce_msg);
-
-    return esp_transport_write(transport, extranonce_msg, strlen(extranonce_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 int STRATUM_V1_authorize(esp_transport_handle_t transport, int send_uid, const char * username, const char * pass)
 {
-    char authorize_msg[BUFFER_SIZE];
-    snprintf(authorize_msg, sizeof(authorize_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"mining.authorize\",\"params\":[\"%s\",\"%s\"]}\n",
         send_uid, username, pass);
-    debug_stratum_tx(authorize_msg);
-
-    return esp_transport_write(transport, authorize_msg, strlen(authorize_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 int STRATUM_V1_pong(esp_transport_handle_t transport, int message_id)
 {
-    char pong_msg[BUFFER_SIZE];
-    snprintf(pong_msg, sizeof(pong_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"pong\",\"params\":[]}\n",
         message_id);
-    debug_stratum_tx(pong_msg);
-    
-    return esp_transport_write(transport, pong_msg, strlen(pong_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 /// @param transport Transport to write to
@@ -518,24 +1122,16 @@ int STRATUM_V1_submit_share(esp_transport_handle_t transport, int send_uid, cons
                             const char * extranonce_2, const uint32_t ntime,
                             const uint32_t nonce, const uint32_t version_bits)
 {
-    char submit_msg[BUFFER_SIZE];
-    snprintf(submit_msg, sizeof(submit_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"mining.submit\",\"params\":[\"%s\",\"%s\",\"%s\",\"%08lx\",\"%08lx\",\"%08lx\"]}\n",
         send_uid, username, job_id, extranonce_2, ntime, nonce, version_bits);
-    debug_stratum_tx(submit_msg);
-
-    return esp_transport_write(transport, submit_msg, strlen(submit_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 int STRATUM_V1_configure_version_rolling(esp_transport_handle_t transport, int send_uid, uint32_t * version_mask)
 {
-    char configure_msg[BUFFER_SIZE];
-    snprintf(configure_msg, sizeof(configure_msg),
+    return stratum_sendf(transport,
         "{\"id\":%d,\"method\":\"mining.configure\",\"params\":[[\"version-rolling\"],{\"version-rolling.mask\":\"ffffffff\"}]}\n",
         send_uid);
-    debug_stratum_tx(configure_msg);
-
-    return esp_transport_write(transport, configure_msg, strlen(configure_msg), TRANSPORT_TIMEOUT_MS);
 }
 
 static void debug_stratum_tx(const char * msg)
