@@ -11,7 +11,7 @@
 #define HASH_SIZE 32
 #define COINBASE_SIZE 100
 #define COINBASE2_SIZE 128
-#define MAX_REQUEST_IDS 1024
+#define MAX_INFLIGHT_REQUESTS 32
 #define MAX_EXTRANONCE_2_LEN 32
 
 typedef enum
@@ -79,6 +79,7 @@ typedef struct
 
 typedef struct {
     int64_t timestamp_us;
+    int request_id;
     bool tracking;
 } RequestTiming;
 

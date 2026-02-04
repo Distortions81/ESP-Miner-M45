@@ -335,7 +335,7 @@ void stratum_primary_heartbeat(void * pvParameters)
 
 static void decode_mining_notification(GlobalState * GLOBAL_STATE, const mining_notify *mining_notification)
 {
-    mining_notification_result_t *result = heap_caps_malloc(sizeof(mining_notification_result_t), MALLOC_CAP_SPIRAM);
+    mining_notification_result_t *result = heap_caps_malloc(sizeof(mining_notification_result_t), MALLOC_CAP_INTERNAL);
     if (!result) {
         ESP_LOGE(TAG, "Failed to allocate result in PSRAM");
         return;

@@ -30,30 +30,53 @@ static char * json_rpc_buffer = NULL;
 static size_t json_rpc_buffer_size = 0;
 static int last_parsed_request_id = -1;
 
-static RequestTiming request_timings[MAX_REQUEST_IDS];
+static RequestTiming request_timings[MAX_INFLIGHT_REQUESTS];
 static bool initialized = false;
 
 static void init_request_timings() {
     if (!initialized) {
-        for (int i = 0; i < MAX_REQUEST_IDS; i++) {
+        for (int i = 0; i < MAX_INFLIGHT_REQUESTS; i++) {
             request_timings[i].timestamp_us = 0;
+            request_timings[i].request_id = -1;
             request_timings[i].tracking = false;
         }
         initialized = true;
     }
 }
 
-static RequestTiming* get_request_timing(int request_id) {
+static RequestTiming* find_request_timing(int request_id) {
     if (request_id < 0) return NULL;
-    int index = request_id % MAX_REQUEST_IDS;
-    return &request_timings[index];
+    for (int i = 0; i < MAX_INFLIGHT_REQUESTS; i++) {
+        if (request_timings[i].tracking && request_timings[i].request_id == request_id) {
+            return &request_timings[i];
+        }
+    }
+    return NULL;
+}
+
+static RequestTiming* alloc_request_timing(int request_id) {
+    if (request_id < 0) return NULL;
+    // Reuse existing entry for this request_id.
+    RequestTiming *existing = find_request_timing(request_id);
+    if (existing) {
+        return existing;
+    }
+    // Find a free slot.
+    for (int i = 0; i < MAX_INFLIGHT_REQUESTS; i++) {
+        if (!request_timings[i].tracking) {
+            request_timings[i].request_id = request_id;
+            return &request_timings[i];
+        }
+    }
+    // Table full: skip timing to avoid collisions.
+    return NULL;
 }
 
 void STRATUM_V1_stamp_tx(int request_id)
 {
     init_request_timings();
     if (request_id >= 1) {
-        RequestTiming *timing = get_request_timing(request_id);
+        RequestTiming *timing = alloc_request_timing(request_id);
         if (timing) {
             timing->timestamp_us = esp_timer_get_time();
             timing->tracking = true;
@@ -66,13 +89,14 @@ double STRATUM_V1_get_response_time_ms(int request_id)
     init_request_timings();
     if (request_id < 0) return -1.0;
     
-    RequestTiming *timing = get_request_timing(request_id);
+    RequestTiming *timing = find_request_timing(request_id);
     if (!timing || !timing->tracking) {
         return -1.0;
     }
     
     double response_time = (esp_timer_get_time() - timing->timestamp_us) / 1000.0;
     timing->tracking = false;
+    timing->request_id = -1;
     return response_time;
 }
 
