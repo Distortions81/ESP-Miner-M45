@@ -514,13 +514,6 @@ static bool parse_result_fast(StratumApiV1Message *message, const char *stratum_
         return true;
     }
 
-    if (strncmp(result, "null", 4) == 0) {
-        message->response_success = false;
-        message->error_str = strdup("unknown");
-        message->method = (parsed_id < 5) ? STRATUM_RESULT_SETUP : STRATUM_RESULT;
-        return true;
-    }
-
     const char *error = json_find_key(stratum_json, "error");
     if (error && strncmp(error, "null", 4) != 0) {
         message->response_success = false;
@@ -550,6 +543,13 @@ static bool parse_result_fast(StratumApiV1Message *message, const char *stratum_
         if (!message->error_str) {
             message->error_str = strdup("unknown");
         }
+        return true;
+    }
+
+    if (strncmp(result, "null", 4) == 0) {
+        message->response_success = false;
+        message->error_str = strdup("unknown");
+        message->method = (parsed_id < 5) ? STRATUM_RESULT_SETUP : STRATUM_RESULT;
         return true;
     }
 
