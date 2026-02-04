@@ -6,7 +6,7 @@
 ![Alt](https://repobeats.axiom.co/api/embed/70889479b1e002c18a184b05bc5cbf2ed3718579.svg "Repobeats analytics image")
 
 ## Current changes (all commits)
-- Add `SKIP_LOCAL_NONCE_CHECK` build flag (default on) to bypass local double-SHA256 nonce validation and assume ASIC results meet pool difficulty.
+- Add `SKIP_LOCAL_NONCE_CHECK` build flag (default off) to bypass local double-SHA256 nonce validation and assume ASIC results meet pool difficulty.
 - Reduce hot-path overhead: pre-decode coinbase parts, avoid heap allocs when preparing share submits, and demote ASIC result logs to debug.
 - Force chart Y-axis minimum to `0` in AxeOS charts.
 - Force fan to 100% before frequency transitions to avoid thermal spikes.
