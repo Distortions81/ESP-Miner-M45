@@ -444,11 +444,11 @@ export class HomeComponent implements OnInit, OnDestroy {
 
           // Align both axis if they're hashrates. TODO: for others, such as temperatures as well
           if (this.isHashrateAxis(chartY1DataLabel) && this.isHashrateAxis(chartY2DataLabel)) {
-            this.chartOptions.scales.y.suggestedMin = this.chartOptions.scales.y2.suggestedMin = Math.min(...this.chartY1Data, ...this.chartY2Data);
+            this.chartOptions.scales.y.suggestedMin = this.chartOptions.scales.y2.suggestedMin = 0;
             this.chartOptions.scales.y.suggestedMax = this.chartOptions.scales.y2.suggestedMax = Math.max(...this.chartY1Data, ...this.chartY2Data);
           } else {
-            this.chartOptions.scales.y.suggestedMin = undefined;
-            this.chartOptions.scales.y2.suggestedMin = undefined;
+            this.chartOptions.scales.y.suggestedMin = 0;
+            this.chartOptions.scales.y2.suggestedMin = 0;
             this.chartOptions.scales.y.suggestedMax = this.getSuggestedMaxForLabel(chartY1DataLabel, info);
             this.chartOptions.scales.y2.suggestedMax = this.getSuggestedMaxForLabel(chartY2DataLabel, info);
           }
