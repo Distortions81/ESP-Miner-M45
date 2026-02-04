@@ -335,6 +335,14 @@ static const char *json_expect_char(const char *p, char c)
 
 static const char *json_parse_hex_u32_from_string(const char *p, uint32_t *out)
 {
+    static const uint8_t hex_lut[256] = {
+        [0 ... 255] = 0xFF,
+        ['0'] = 0,  ['1'] = 1,  ['2'] = 2,  ['3'] = 3,  ['4'] = 4,
+        ['5'] = 5,  ['6'] = 6,  ['7'] = 7,  ['8'] = 8,  ['9'] = 9,
+        ['a'] = 10, ['b'] = 11, ['c'] = 12, ['d'] = 13, ['e'] = 14, ['f'] = 15,
+        ['A'] = 10, ['B'] = 11, ['C'] = 12, ['D'] = 13, ['E'] = 14, ['F'] = 15,
+    };
+
     p = json_skip_ws(p);
     if (*p != '"') {
         return NULL;
@@ -345,15 +353,8 @@ static const char *json_parse_hex_u32_from_string(const char *p, uint32_t *out)
     bool has_digit = false;
 
     while (*p && *p != '"') {
-        unsigned char c = (unsigned char)*p;
-        uint8_t v;
-        if (c >= '0' && c <= '9') {
-            v = (uint8_t)(c - '0');
-        } else if (c >= 'a' && c <= 'f') {
-            v = (uint8_t)(c - 'a' + 10);
-        } else if (c >= 'A' && c <= 'F') {
-            v = (uint8_t)(c - 'A' + 10);
-        } else {
+        uint8_t v = hex_lut[(unsigned char)*p];
+        if (v == 0xFF) {
             return NULL;
         }
         value = (value << 4) | v;

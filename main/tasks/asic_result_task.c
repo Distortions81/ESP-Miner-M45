@@ -48,7 +48,6 @@ void ASIC_result_task(void *pvParameters)
         uint32_t pool_diff = 0;
         uint32_t job_version = 0;
         uint32_t job_ntime = 0;
-        bool should_submit = false;
         bool have_jobid = false;
         bool have_extranonce2 = false;
 
@@ -69,42 +68,40 @@ void ASIC_result_task(void *pvParameters)
         job_version = active_job->version;
         job_ntime = active_job->ntime;
 
-        // check the nonce difficulty
-        double nonce_diff = test_nonce_value(&job_snapshot, asic_result->nonce, asic_result->rolled_version);
-
-        //log the ASIC response
-        ESP_LOGD(TAG, "ID: %s, ASIC nr: %d, ver: %08" PRIX32 " Nonce %08" PRIX32 " diff %.1f of %ld.", active_job->jobid, asic_result->asic_nr, asic_result->rolled_version, asic_result->nonce, nonce_diff, pool_diff);
-
-        if (nonce_diff >= pool_diff)
-        {
-            if (active_job->jobid != NULL) {
-                size_t jobid_len = strnlen(active_job->jobid, JOBID_MAX_LEN);
-                if (jobid_len < JOBID_MAX_LEN) {
-                    memcpy(jobid_copy, active_job->jobid, jobid_len);
-                    jobid_copy[jobid_len] = '\0';
-                    have_jobid = true;
-                } else {
-                    ESP_LOGW(TAG, "Job ID too long, skipping submit");
-                }
+        if (active_job->jobid != NULL) {
+            size_t jobid_len = strnlen(active_job->jobid, JOBID_MAX_LEN);
+            if (jobid_len < JOBID_MAX_LEN) {
+                memcpy(jobid_copy, active_job->jobid, jobid_len);
+                jobid_copy[jobid_len] = '\0';
+                have_jobid = true;
+            } else {
+                ESP_LOGW(TAG, "Job ID too long, skipping submit");
             }
-            if (active_job->extranonce2 != NULL) {
-                size_t ex2_len = strnlen(active_job->extranonce2, EXTRANONCE2_MAX_LEN);
-                if (ex2_len < EXTRANONCE2_MAX_LEN) {
-                    memcpy(extranonce2_copy, active_job->extranonce2, ex2_len);
-                    extranonce2_copy[ex2_len] = '\0';
-                    have_extranonce2 = true;
-                } else {
-                    ESP_LOGW(TAG, "Extranonce2 too long, skipping submit");
-                }
+        }
+        if (active_job->extranonce2 != NULL) {
+            size_t ex2_len = strnlen(active_job->extranonce2, EXTRANONCE2_MAX_LEN);
+            if (ex2_len < EXTRANONCE2_MAX_LEN) {
+                memcpy(extranonce2_copy, active_job->extranonce2, ex2_len);
+                extranonce2_copy[ex2_len] = '\0';
+                have_extranonce2 = true;
+            } else {
+                ESP_LOGW(TAG, "Extranonce2 too long, skipping submit");
             }
-            should_submit = have_jobid && have_extranonce2;
         }
 
         pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
 
+        // check the nonce difficulty without holding the job lock
+        double nonce_diff = test_nonce_value(&job_snapshot, asic_result->nonce, asic_result->rolled_version);
+
+        //log the ASIC response
+        ESP_LOGD(TAG, "ID: %s, ASIC nr: %d, ver: %08" PRIX32 " Nonce %08" PRIX32 " diff %.1f of %ld.",
+                 have_jobid ? jobid_copy : "(null)", asic_result->asic_nr, asic_result->rolled_version,
+                 asic_result->nonce, nonce_diff, pool_diff);
+
         SYSTEM_notify_found_nonce(GLOBAL_STATE, nonce_diff, job_id);
 
-        if (should_submit)
+        if (nonce_diff >= pool_diff && have_jobid && have_extranonce2)
         {
             char * user = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback ? GLOBAL_STATE->SYSTEM_MODULE.fallback_pool_user : GLOBAL_STATE->SYSTEM_MODULE.pool_user;
             int ret = STRATUM_V1_submit_share(
