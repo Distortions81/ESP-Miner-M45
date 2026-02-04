@@ -238,13 +238,24 @@ void SYSTEM_notify_new_ntime(GlobalState * GLOBAL_STATE, uint32_t ntime)
 void SYSTEM_notify_found_nonce(GlobalState * GLOBAL_STATE, double diff, uint8_t job_id)
 {
     SystemModule * module = &GLOBAL_STATE->SYSTEM_MODULE;
+    uint32_t job_target = 0;
 
     if ((uint64_t) diff > module->best_session_nonce_diff) {
         module->best_session_nonce_diff = (uint64_t) diff;
         suffixString((uint64_t) diff, module->best_session_diff_string, DIFF_STRING_SIZE, 0);
     }
 
-    double network_diff = networkDifficulty(GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[job_id]->target);
+    pthread_mutex_lock(&GLOBAL_STATE->valid_jobs_lock);
+    if (GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[job_id] != NULL) {
+        job_target = GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[job_id]->target;
+    }
+    pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
+
+    if (job_target == 0) {
+        return;
+    }
+
+    double network_diff = networkDifficulty(job_target);
     if (diff >= network_diff) {
         module->block_found = true;
         ESP_LOGI(TAG, "FOUND BLOCK!!!!!!!!!!!!!!!!!!!!!! %f >= %f", diff, network_diff);

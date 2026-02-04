@@ -40,7 +40,11 @@ void create_jobs_task(void *pvParameters)
     while (1) {
         uint64_t start_time = esp_timer_get_time();
         mining_notify *new_mining_notification = (mining_notify *)queue_dequeue_timeout(&GLOBAL_STATE->stratum_queue, timeout_ms);
-        timeout_ms -= (esp_timer_get_time() - start_time) / 1000;
+        int elapsed_ms = (int)((esp_timer_get_time() - start_time) / 1000);
+        timeout_ms -= elapsed_ms;
+        if (timeout_ms < 0) {
+            timeout_ms = 0;
+        }
 
         if (new_mining_notification != NULL) {
             if (current_mining_notification != NULL) {
