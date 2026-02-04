@@ -295,6 +295,13 @@ void POWER_MANAGEMENT_task(void * pvParameters)
 
         if (asic_frequency != last_asic_frequency) {
             ESP_LOGI(TAG, "New ASIC frequency requested: %g MHz (current: %g MHz)", asic_frequency, last_asic_frequency);
+
+            // Force fan to 100% before frequency transition to avoid thermal spikes.
+            if (Thermal_set_fan_percent(&GLOBAL_STATE->DEVICE_CONFIG, 1.0f) == ESP_OK) {
+                power_management->fan_perc = 100;
+            } else {
+                ESP_LOGW(TAG, "Failed to set fan to 100%% before frequency change");
+            }
             
             bool success = ASIC_set_frequency(GLOBAL_STATE, asic_frequency);
             
