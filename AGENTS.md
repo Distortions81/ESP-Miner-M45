@@ -33,6 +33,7 @@ Tests are built into a firmware image and run **on device** (not on host).
 ```
 
 This produces `test/build/unit_test_stratum.bin`.
+If your repo is in a different location, update the `--workspace` path accordingly.
 
 ### Flash + monitor (requires device)
 See `doc/unit_testing.md` for full details. Quick outline:
