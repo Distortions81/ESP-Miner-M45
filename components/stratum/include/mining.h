@@ -2,6 +2,7 @@
 #define MINING_H_
 
 #include "stratum_api.h"
+#include <stddef.h>
 
 typedef struct
 {
@@ -27,6 +28,9 @@ void free_bm_job(bm_job *job);
 
 void calculate_coinbase_tx_hash(const char *coinbase_1, const char *coinbase_2,
                                 const char *extranonce, const char *extranonce_2, uint8_t dest[32]);
+void calculate_coinbase_tx_hash_prebin(const uint8_t *coinbase_1_bin, size_t coinbase_1_bin_len,
+                                       const uint8_t *coinbase_2_bin, size_t coinbase_2_bin_len,
+                                       const char *extranonce, const char *extranonce_2, uint8_t dest[32]);
 
 void calculate_merkle_root_hash(const uint8_t coinbase_tx_hash[32], const uint8_t merkle_branches[][32], const int num_merkle_branches, uint8_t dest[32]);
 

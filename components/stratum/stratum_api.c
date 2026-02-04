@@ -348,6 +348,16 @@ void STRATUM_V1_parse(StratumApiV1Message * message, const char * stratum_json)
         new_work->prev_block_hash = strdup(cJSON_GetArrayItem(params, 1)->valuestring);
         new_work->coinbase_1 = strdup(cJSON_GetArrayItem(params, 2)->valuestring);
         new_work->coinbase_2 = strdup(cJSON_GetArrayItem(params, 3)->valuestring);
+        new_work->coinbase_1_bin_len = strlen(new_work->coinbase_1) / 2;
+        new_work->coinbase_2_bin_len = strlen(new_work->coinbase_2) / 2;
+        new_work->coinbase_1_bin = malloc(new_work->coinbase_1_bin_len);
+        new_work->coinbase_2_bin = malloc(new_work->coinbase_2_bin_len);
+        if (new_work->coinbase_1_bin != NULL) {
+            hex2bin(new_work->coinbase_1, new_work->coinbase_1_bin, new_work->coinbase_1_bin_len);
+        }
+        if (new_work->coinbase_2_bin != NULL) {
+            hex2bin(new_work->coinbase_2, new_work->coinbase_2_bin, new_work->coinbase_2_bin_len);
+        }
 
         cJSON * merkle_branch = cJSON_GetArrayItem(params, 4);
         new_work->n_merkle_branches = cJSON_GetArraySize(merkle_branch);
@@ -400,6 +410,8 @@ void STRATUM_V1_free_mining_notify(mining_notify * params)
     free(params->prev_block_hash);
     free(params->coinbase_1);
     free(params->coinbase_2);
+    free(params->coinbase_1_bin);
+    free(params->coinbase_2_bin);
     free(params->merkle_branches);
     free(params);
 }

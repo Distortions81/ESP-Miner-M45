@@ -12,6 +12,8 @@
 #include "asic.h"
 
 static const char *TAG = "asic_result";
+static const size_t JOBID_MAX_LEN = 128;
+static const size_t EXTRANONCE2_MAX_LEN = 2 * 32 + 1; // MAX_EXTRANONCE_2_LEN * 2 + NUL
 
 void ASIC_result_task(void *pvParameters)
 {
@@ -41,12 +43,14 @@ void ASIC_result_task(void *pvParameters)
         uint8_t job_id = asic_result->job_id;
 
         bm_job job_snapshot = {0};
-        char *jobid_copy = NULL;
-        char *extranonce2_copy = NULL;
+        char jobid_copy[JOBID_MAX_LEN] = {0};
+        char extranonce2_copy[EXTRANONCE2_MAX_LEN] = {0};
         uint32_t pool_diff = 0;
         uint32_t job_version = 0;
         uint32_t job_ntime = 0;
         bool should_submit = false;
+        bool have_jobid = false;
+        bool have_extranonce2 = false;
 
         pthread_mutex_lock(&GLOBAL_STATE->valid_jobs_lock);
         if (GLOBAL_STATE->valid_jobs[job_id] == 0 || GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[job_id] == NULL)
@@ -66,24 +70,38 @@ void ASIC_result_task(void *pvParameters)
         double nonce_diff = test_nonce_value(&job_snapshot, asic_result->nonce, asic_result->rolled_version);
 
         //log the ASIC response
-        ESP_LOGI(TAG, "ID: %s, ASIC nr: %d, ver: %08" PRIX32 " Nonce %08" PRIX32 " diff %.1f of %ld.", active_job->jobid, asic_result->asic_nr, asic_result->rolled_version, asic_result->nonce, nonce_diff, pool_diff);
+        ESP_LOGD(TAG, "ID: %s, ASIC nr: %d, ver: %08" PRIX32 " Nonce %08" PRIX32 " diff %.1f of %ld.", active_job->jobid, asic_result->asic_nr, asic_result->rolled_version, asic_result->nonce, nonce_diff, pool_diff);
 
         if (nonce_diff >= pool_diff)
         {
             if (active_job->jobid != NULL) {
-                jobid_copy = strdup(active_job->jobid);
+                size_t jobid_len = strnlen(active_job->jobid, JOBID_MAX_LEN);
+                if (jobid_len < JOBID_MAX_LEN) {
+                    memcpy(jobid_copy, active_job->jobid, jobid_len);
+                    jobid_copy[jobid_len] = '\0';
+                    have_jobid = true;
+                } else {
+                    ESP_LOGW(TAG, "Job ID too long, skipping submit");
+                }
             }
             if (active_job->extranonce2 != NULL) {
-                extranonce2_copy = strdup(active_job->extranonce2);
+                size_t ex2_len = strnlen(active_job->extranonce2, EXTRANONCE2_MAX_LEN);
+                if (ex2_len < EXTRANONCE2_MAX_LEN) {
+                    memcpy(extranonce2_copy, active_job->extranonce2, ex2_len);
+                    extranonce2_copy[ex2_len] = '\0';
+                    have_extranonce2 = true;
+                } else {
+                    ESP_LOGW(TAG, "Extranonce2 too long, skipping submit");
+                }
             }
-            should_submit = true;
+            should_submit = have_jobid && have_extranonce2;
         }
 
         pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
 
         SYSTEM_notify_found_nonce(GLOBAL_STATE, nonce_diff, job_id);
 
-        if (should_submit && jobid_copy != NULL && extranonce2_copy != NULL)
+        if (should_submit)
         {
             char * user = GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback ? GLOBAL_STATE->SYSTEM_MODULE.fallback_pool_user : GLOBAL_STATE->SYSTEM_MODULE.pool_user;
             int ret = STRATUM_V1_submit_share(
@@ -102,7 +120,5 @@ void ASIC_result_task(void *pvParameters)
             }
         }
 
-        free(jobid_copy);
-        free(extranonce2_copy);
     }
 }

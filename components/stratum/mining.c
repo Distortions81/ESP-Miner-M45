@@ -33,6 +33,33 @@ void calculate_coinbase_tx_hash(const char *coinbase_1, const char *coinbase_2, 
     double_sha256_bin(coinbase_tx_bin, coinbase_tx_bin_len, dest);
 }
 
+void calculate_coinbase_tx_hash_prebin(const uint8_t *coinbase_1_bin, size_t coinbase_1_bin_len,
+                                       const uint8_t *coinbase_2_bin, size_t coinbase_2_bin_len,
+                                       const char *extranonce, const char *extranonce_2, uint8_t dest[32])
+{
+    size_t len2 = strlen(extranonce);
+    size_t len3 = strlen(extranonce_2);
+    size_t extranonce_bin_len = len2 / 2;
+    size_t extranonce2_bin_len = len3 / 2;
+    size_t coinbase_tx_bin_len = coinbase_1_bin_len + extranonce_bin_len + extranonce2_bin_len + coinbase_2_bin_len;
+
+    uint8_t coinbase_tx_bin[coinbase_tx_bin_len];
+
+    size_t bin_offset = 0;
+    if (coinbase_1_bin != NULL && coinbase_1_bin_len > 0) {
+        memcpy(coinbase_tx_bin + bin_offset, coinbase_1_bin, coinbase_1_bin_len);
+        bin_offset += coinbase_1_bin_len;
+    }
+    bin_offset += hex2bin(extranonce, coinbase_tx_bin + bin_offset, coinbase_tx_bin_len - bin_offset);
+    bin_offset += hex2bin(extranonce_2, coinbase_tx_bin + bin_offset, coinbase_tx_bin_len - bin_offset);
+    if (coinbase_2_bin != NULL && coinbase_2_bin_len > 0) {
+        memcpy(coinbase_tx_bin + bin_offset, coinbase_2_bin, coinbase_2_bin_len);
+        bin_offset += coinbase_2_bin_len;
+    }
+
+    double_sha256_bin(coinbase_tx_bin, coinbase_tx_bin_len, dest);
+}
+
 void calculate_merkle_root_hash(const uint8_t coinbase_tx_hash[32], const uint8_t merkle_branches[][32], const int num_merkle_branches, uint8_t dest[32])
 {
     uint8_t both_merkles[64];

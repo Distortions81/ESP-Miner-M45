@@ -95,7 +95,14 @@ static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification
     //ESP_LOGI(TAG, "Generated extranonce_2: %s", extranonce_2_str);
 
     uint8_t coinbase_tx_hash[32];
-    calculate_coinbase_tx_hash(notification->coinbase_1, notification->coinbase_2, GLOBAL_STATE->extranonce_str, extranonce_2_str, coinbase_tx_hash);
+    if (notification->coinbase_1_bin != NULL && notification->coinbase_2_bin != NULL) {
+        calculate_coinbase_tx_hash_prebin(notification->coinbase_1_bin, notification->coinbase_1_bin_len,
+                                          notification->coinbase_2_bin, notification->coinbase_2_bin_len,
+                                          GLOBAL_STATE->extranonce_str, extranonce_2_str, coinbase_tx_hash);
+    } else {
+        calculate_coinbase_tx_hash(notification->coinbase_1, notification->coinbase_2,
+                                   GLOBAL_STATE->extranonce_str, extranonce_2_str, coinbase_tx_hash);
+    }
 
     uint8_t merkle_root[32];
     calculate_merkle_root_hash(coinbase_tx_hash, (uint8_t(*)[32])notification->merkle_branches, notification->n_merkle_branches, merkle_root);

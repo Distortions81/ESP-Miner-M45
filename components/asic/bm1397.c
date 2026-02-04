@@ -358,7 +358,7 @@ task_result *BM1397_process_work(void *pvParameters)
     uint8_t core_id = (uint8_t)((nonce_h >> 25) & 0x7f);
     uint8_t small_core_id = asic_result.job.id & 0x0f;
 
-    ESP_LOGI(TAG, "Job ID: %02X, Asic nr: %d, Core: %d/%d, Ver: %08" PRIX32, rx_job_id, asic_nr, core_id, small_core_id, rolled_version);    
+    ESP_LOGD(TAG, "Job ID: %02X, Asic nr: %d, Core: %d/%d, Ver: %08" PRIX32, rx_job_id, asic_nr, core_id, small_core_id, rolled_version);    
 
     return &result;
 }

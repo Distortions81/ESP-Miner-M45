@@ -45,6 +45,10 @@ typedef struct
     char *prev_block_hash;
     char *coinbase_1;
     char *coinbase_2;
+    uint8_t *coinbase_1_bin;
+    size_t coinbase_1_bin_len;
+    uint8_t *coinbase_2_bin;
+    size_t coinbase_2_bin_len;
     uint8_t *merkle_branches;
     size_t n_merkle_branches;
     uint32_t version;
