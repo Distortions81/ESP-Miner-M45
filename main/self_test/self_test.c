@@ -424,7 +424,8 @@ bool self_test(void * pvParameters)
     calculate_merkle_root_hash(coinbase_tx_hash, merkles, num_merkles, merkle_root);
 
     bm_job base_job = {0};
-    construct_bm_job(&notify_message, merkle_root, 0x1fffe000, 1000000, &base_job);
+    bool include_midstate = (GLOBAL_STATE->DEVICE_CONFIG.family.asic.id == BM1397);
+    construct_bm_job(&notify_message, merkle_root, 0x1fffe000, 1000000, include_midstate, &base_job);
     bm_job * job = NULL;
 
     Thermal_set_fan_percent(&GLOBAL_STATE->DEVICE_CONFIG, 1);

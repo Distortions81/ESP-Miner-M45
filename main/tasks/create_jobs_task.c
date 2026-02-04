@@ -107,7 +107,8 @@ static void generate_work(GlobalState *GLOBAL_STATE, mining_notify *notification
         return;
     }
 
-    construct_bm_job(notification, merkle_root, GLOBAL_STATE->version_mask, difficulty, next_job);
+    bool include_midstate = (GLOBAL_STATE->DEVICE_CONFIG.family.asic.id == BM1397);
+    construct_bm_job(notification, merkle_root, GLOBAL_STATE->version_mask, difficulty, include_midstate, next_job);
 
     next_job->extranonce2 = strdup(extranonce_2_str);
     next_job->jobid = strdup(notification->job_id);
